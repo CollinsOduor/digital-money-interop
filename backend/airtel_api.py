@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 
 import requests
 
-from backend.utils import normalize_msisdn
+from utils import normalize_msisdn
 from config import settings
 
 

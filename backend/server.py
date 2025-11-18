@@ -4,7 +4,7 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from airtel_api import AirtelAPISimulator
+from airtel_api import AirtelAPI
 from mpesa_api import MpesaAPI
 
 app = FastAPI(title="Paybill Interoperability Simulator")
@@ -20,12 +20,12 @@ app.add_middleware(
 # --- In-Memory Simulated Ledger ---
 ledger = {
     # M-PESA PAYBILLS (Type: MPESA)
-    "MPESA_1001": {"name": "M-Pesa Agent 1", "balance": 500000.00, "network": "MPESA"},
-    "MPESA_1002": {"name": "M-Pesa Agent 2", "balance": 120000.00, "network": "MPESA"},
+    "MPESA_1001": {"name": "Float in Account 1", "balance": 500000.00, "network": "MPESA"},
+    "MPESA_1002": {"name": "Float in Account 2", "balance": 120000.00, "network": "MPESA"},
     
     # AIRTEL MONEY PAYBILLS (Type: AIRTEL)
-    "AIRTEL_2001": {"name": "Airtel Agent 1", "balance": 50000.00, "network": "AIRTEL"},
-    "AIRTEL_2002": {"name": "Airtel Agent 2", "balance": 80000.00, "network": "AIRTEL"},
+    "AIRTEL_2001": {"name": "Float in Account 1", "balance": 50000.00, "network": "AIRTEL"},
+    "AIRTEL_2002": {"name": "Float in Account 2", "balance": 80000.00, "network": "AIRTEL"},
     
     # The Intermediary
     "INTERMEDIARY_ACCOUNT": {"name": "Float balance of Intermediary", "balance": 1000000.00, "network": "INTERMEDIARY"},
@@ -49,7 +49,7 @@ class STKPushRequest(BaseModel):
     airtel_metadata: Optional[Dict[str, Any]] = None
 
 mpesa_api = MpesaAPI()
-airtel_api = AirtelAPISimulator()
+airtel_api = AirtelAPI()
 stk_sessions: Dict[str, Dict[str, Any]] = {}
 
 @app.get("/")

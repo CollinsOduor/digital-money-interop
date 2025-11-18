@@ -13,6 +13,8 @@ import requests
 from config import settings
 from utils import normalize_msisdn
 
+import pytz
+
 
 class MpesaAPI:
     def __init__(self):
@@ -51,7 +53,7 @@ class MpesaAPI:
 
     def _generate_password(self, timestamp: Optional[str] = None) -> str:
         if not timestamp:
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            timestamp = datetime.now(pytz.timezone('Africa/Nairobi')).strftime("%Y%m%d%H%M%S")
         raw = f"{self.short_code}{self.pass_key}{timestamp}"
         return base64.b64encode(raw.encode("utf-8")).decode("utf-8")
 
@@ -71,7 +73,7 @@ class MpesaAPI:
             raise ValueError("Amount must be greater than zero.")
 
         msisdn = normalize_msisdn(phone_number)
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.now(pytz.timezone('Africa/Nairobi')).strftime("%Y%m%d%H%M%S")
         password = self._generate_password(timestamp)
         merchant_request_id = self._generate_merchant_request_id()
         checkout_request_id = self._generate_checkout_request_id()
@@ -91,7 +93,6 @@ class MpesaAPI:
             "TransactionDesc": description[:255],
             "ClientReference": reference,
         }
-
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.authenticate()['access_token']}",
@@ -125,7 +126,7 @@ class MpesaAPI:
             data["timestamp"] = datetime.now().isoformat()
 
         if data.get("ResponseCode") != "0":
-            raise Exception("STK Push request was rejected")
+            raise Exception("Nework payment request request was rejected")
         return data
 
     def confirm_stk_push(
@@ -143,7 +144,7 @@ class MpesaAPI:
         """
         success = result_code == "0"
         receipt = mpesa_receipt_number or uuid.uuid4().hex[:10].upper()
-        transaction_time = transaction_date or datetime.now().strftime("%Y%m%d%H%M%S")
+        transaction_time = transaction_date or datetime.now(pytz.timezone('Africa/Nairobi')).strftime("%Y%m%d%H%M%S")
 
         return {
             "Body": {
@@ -164,5 +165,5 @@ class MpesaAPI:
                 }
             },
             "success": success,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(pytz.timezone('Africa/Nairobi')).isoformat(),
         }

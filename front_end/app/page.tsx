@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 
-const API_URL = "http://localhost:8000/transfer";
+const API_URL = "http://localhost:8000/mpesa/stkpush/initiate";
 const STATUS_URL = "http://localhost:8000/";
 
 const formatKsh = (amount: any) => {
@@ -11,8 +11,10 @@ const formatKsh = (amount: any) => {
 };
 
 const App = () => {
-    const [sourcePaybill, setSourcePaybill] = useState<any>('MPESA_AGENT_1');
-    const [destPaybill, setDestPaybill] = useState<any>('AIRTEL_AGENT_1');
+    const [mpesaPhone, setMpesaPhone] = useState<any>('07XXXXXXXX');
+    const [accountReference, setAccountReference] = useState<any>('INTEROP_FLOAT');
+    const [airtelPaybill, setAirtelPaybill] = useState<any>('AIRTEL_2001');
+    const [airtelCustomerMsisdn, setAirtelCustomerMsisdn] = useState<any>('0700000000');
     const [amount, setAmount] = useState<any>(10000.00);
     const [status, setStatus] = useState<any>(null);
     const [isLoading, setIsLoading] = useState<any>(false);
@@ -34,8 +36,14 @@ const App = () => {
     }, []);
 
     const handleTransfer = async () => {
-        if (amount <= 0 || !sourcePaybill || !destPaybill) {
-            setStatus({ success: false, message: "Please enter valid Paybill IDs and a positive amount." });
+        if (
+            amount <= 0 ||
+            !mpesaPhone ||
+            !accountReference ||
+            !airtelPaybill ||
+            !airtelCustomerMsisdn
+        ) {
+            setStatus({ success: false, message: "Please fill in all fields with valid values." });
             return;
         }
 
@@ -49,17 +57,24 @@ const App = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    source_paybill: sourcePaybill,
-                    destination_paybill: destPaybill,
+                    phone_number: mpesaPhone,
                     amount: parseFloat(amount),
+                    account_reference: accountReference,
+                    airtel_paybill_id: airtelPaybill,
+                    airtel_customer_msisdn: airtelCustomerMsisdn,
+                    airtel_amount: parseFloat(amount),
                 }),
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                setStatus(data);
-                setLedgerSnapshot(data.current_ledger_snapshot);
+                setStatus({
+                    success: true,
+                    message: data.message || "STK push initiated.",
+                    mpesa_response: data.mpesa_response,
+                    checkout_request_id: data.checkout_request_id,
+                });
                 // Refresh full ledger status
                 fetchStatus();
             } else {
@@ -82,7 +97,7 @@ const App = () => {
 
         return (
             <div className="space-y-4">
-                {Object.keys(ledgerSnapshot).map(key => {
+                {Object.keys(ledgerSnapshot).map((key) => {
                     const account = ledgerSnapshot[key];
                     const isIntermediary = key.includes('INTERMEDIARY');
                     const isAgent = key.includes('AGENT');
@@ -117,7 +132,7 @@ const App = () => {
                     Paybill Interoperability <span className="text-indigo-600">POC</span>
                 </h1>
                 <p className="mt-2 text-lg text-gray-500">
-                    Simulated M-Pesa and Airtel Money API transfers using proper API structures.
+                    M-Pesa and Airtel Money digital money transfers.
                 </p>
             </header>
 
@@ -135,30 +150,30 @@ const App = () => {
                     {/* Transfer Form */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div>
-                            <label htmlFor="source" className="block text-sm font-medium text-gray-700">Source Paybill</label>
+                            <label htmlFor="mpesaPhone" className="block text-sm font-medium text-gray-700">M-Pesa Phone Number</label>
                             <input
-                                id="source"
+                                id="mpesaPhone"
                                 type="text"
-                                value={sourcePaybill}
-                                onChange={(e) => setSourcePaybill(e.target.value)}
+                                value={mpesaPhone}
+                                onChange={(e) => setMpesaPhone(e.target.value)}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
-                                placeholder="MPESA_AGENT_1"
+                                placeholder="07XXXXXXXX"
                                 disabled={isLoading}
                             />
-                            <p className="mt-1 text-xs text-gray-500">e.g., MPESA_AGENT_1, MPESA_AGENT_2, AIRTEL_AGENT_1, AIRTEL_AGENT_2</p>
+                            <p className="mt-1 text-xs text-gray-500">Phone that will receive the STK push (e.g., 07XXXXXXXX).</p>
                         </div>
                         <div>
-                            <label htmlFor="destination" className="block text-sm font-medium text-gray-700">Destination Paybill</label>
+                            <label htmlFor="accountReference" className="block text-sm font-medium text-gray-700">Account Reference</label>
                             <input
-                                id="destination"
+                                id="accountReference"
                                 type="text"
-                                value={destPaybill}
-                                onChange={(e) => setDestPaybill(e.target.value)}
+                                value={accountReference}
+                                onChange={(e) => setAccountReference(e.target.value)}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
-                                placeholder="AIRTEL_AGENT_1"
+                                placeholder="INTEROP_FLOAT"
                                 disabled={isLoading}
                             />
-                            <p className="mt-1 text-xs text-gray-500">e.g., MPESA_AGENT_1, MPESA_AGENT_2, AIRTEL_AGENT_1, AIRTEL_AGENT_2</p>
+                            <p className="mt-1 text-xs text-gray-500">Appears in M-Pesa statements for this STK push.</p>
                         </div>
                         <div>
                             <label htmlFor="amount" className="block text-sm font-medium text-gray-700">Amount (Ksh)</label>
@@ -173,6 +188,32 @@ const App = () => {
                                 step="0.01"
                                 disabled={isLoading}
                             />
+                        </div>
+                        <div>
+                            <label htmlFor="airtelPaybill" className="block text-sm font-medium text-gray-700">Airtel Paybill ID</label>
+                            <input
+                                id="airtelPaybill"
+                                type="text"
+                                value={airtelPaybill}
+                                onChange={(e) => setAirtelPaybill(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
+                                placeholder="AIRTEL_2001"
+                                disabled={isLoading}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">Paybill that will send funds to the Airtel customer.</p>
+                        </div>
+                        <div>
+                            <label htmlFor="airtelMsisdn" className="block text-sm font-medium text-gray-700">Airtel Customer MSISDN</label>
+                            <input
+                                id="airtelMsisdn"
+                                type="text"
+                                value={airtelCustomerMsisdn}
+                                onChange={(e) => setAirtelCustomerMsisdn(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
+                                placeholder="0700000000"
+                                disabled={isLoading}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">Airtel customer who receives the payout.</p>
                         </div>
                     </div>
                     
@@ -193,51 +234,17 @@ const App = () => {
                             </h4>
                             <p className="text-gray-700 mb-4">{status.message}</p>
 
-                            {status.transaction_steps && (
-                                <div className="space-y-4 pt-4 border-t border-gray-200">
-                                    <h5 className="font-semibold text-gray-700">Transaction Flow Steps:</h5>
-                                    {status.transaction_steps.map((step: any, index: any) => (
-                                        <div key={index} className="flex space-x-3 items-start">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shrink-0 ${step.status === 'COMPLETED' ? 'bg-indigo-600' : 'bg-yellow-600'}`}>
-                                                {index + 1}
-                                            </div>
-                                            <div>
-                                                <p className="font-medium text-gray-900">{step.description}</p>
-                                                <p className="text-sm text-gray-500">{step.details}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {status.settlement_fee !== undefined && status.settlement_fee > 0 && (
-                                        <p className="text-sm text-gray-600 pt-2 border-t border-gray-200">
-                                            Settlement Fee: {formatKsh(status.settlement_fee)} (1% for cross-network transfers)
-                                        </p>
-                                    )}
-                                    <p className="text-lg font-bold text-indigo-700 pt-3 border-t border-gray-200">
-                                        Final Credit Amount: {formatKsh(status.final_amount_credited)}
-                                    </p>
-                                    {status.transfer_type && (
-                                        <p className="text-sm text-gray-600 pt-2">
-                                            Transfer Type: <span className="font-semibold">{status.transfer_type}</span>
-                                        </p>
-                                    )}
-                                </div>
-                            )}
-                            {status.api_responses && status.api_responses.length > 0 && (
+                            {status.mpesa_response && (
                                 <div className="mt-6 pt-6 border-t border-gray-200">
-                                    <h5 className="font-semibold text-gray-700 mb-3">API Responses:</h5>
-                                    <div className="space-y-3">
-                                        {status.api_responses.map((apiResp: any, index: number) => (
-                                            <div key={index} className="bg-gray-50 p-3 rounded border border-gray-200">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className="text-xs font-semibold text-gray-700">{apiResp.step}</span>
-                                                    <span className="text-xs text-gray-500">{apiResp.network}</span>
-                                                </div>
-                                                <pre className="text-xs text-gray-600 overflow-x-auto">
-                                                    {JSON.stringify(apiResp.response, null, 2)}
-                                                </pre>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <h5 className="font-semibold text-gray-700 mb-3">M-Pesa STK Push Response:</h5>
+                                    <pre className="text-xs text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto">
+                                        {JSON.stringify(status.mpesa_response, null, 2)}
+                                    </pre>
+                                    {status.checkout_request_id && (
+                                        <p className="text-sm text-gray-600 mt-3">
+                                            Checkout Request ID: <span className="font-mono text-gray-800">{status.checkout_request_id}</span>
+                                        </p>
+                                    )}
                                 </div>
                             )}
                         </div>
