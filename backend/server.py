@@ -1,6 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from typing import Any, Dict, Optional
+
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+from airtel_api import AirtelAPISimulator
+from mpesa_api import MpesaAPI
 
 app = FastAPI(title="Paybill Interoperability Simulator")
 
@@ -30,6 +35,22 @@ class TransferRequest(BaseModel):
     source_paybill: str
     destination_paybill: str
     amount: float
+
+class STKPushRequest(BaseModel):
+    phone_number: str
+    amount: float
+    account_reference: str
+    airtel_paybill_id: str
+    airtel_customer_msisdn: str
+    airtel_amount: Optional[float] = None
+    airtel_currency: str = "KES"
+    airtel_country: str = "KEN"
+    airtel_narrative: str = "Cross-network payout"
+    airtel_metadata: Optional[Dict[str, Any]] = None
+
+mpesa_api = MpesaAPI()
+airtel_api = AirtelAPISimulator()
+stk_sessions: Dict[str, Dict[str, Any]] = {}
 
 @app.get("/")
 def get_status():
@@ -100,3 +121,67 @@ def process_transfer(request: TransferRequest):
     except Exception as e:
         # Rollback logic
         raise HTTPException(status_code=500, detail=f"Simulation error: {str(e)}")
+
+@app.post("/mpesa/stkpush/initiate")
+def initiate_stk_push(request: STKPushRequest):
+    try:
+        mpesa_response = mpesa_api.initiate_stk_push(
+            phone_number=request.phone_number,
+            amount=request.amount,
+            account_reference=request.account_reference,
+            description="Interoperability STK Push",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to initiate STK push: {exc}") from exc
+
+    checkout_request_id = mpesa_response.get("CheckoutRequestID")
+    if checkout_request_id:
+        stk_sessions[checkout_request_id] = {
+            "airtel_paybill_id": request.airtel_paybill_id,
+            "airtel_customer_msisdn": request.airtel_customer_msisdn,
+            "airtel_amount": request.airtel_amount or request.amount,
+            "airtel_currency": request.airtel_currency,
+            "airtel_country": request.airtel_country,
+            "airtel_narrative": request.airtel_narrative,
+            "airtel_metadata": request.airtel_metadata or {},
+        }
+
+    return {
+        "success": True,
+        "message": "STK push initiated. Awaiting callback confirmation.",
+        "mpesa_response": mpesa_response,
+        "checkout_request_id": checkout_request_id,
+    }
+
+@app.post("/mpesa/stkpush/callback")
+def mpesa_stk_callback(payload: Dict[str, Any] = Body(...)):
+    callback = payload.get("Body", {}).get("stkCallback", {})
+    checkout_request_id = callback.get("CheckoutRequestID")
+    result_code = str(callback.get("ResultCode", "1"))
+    result_desc = callback.get("ResultDesc", "Unknown status")
+    airtel_result = None
+    context = stk_sessions.pop(checkout_request_id, None) if checkout_request_id else None
+
+    if result_code == "0" and context:
+        airtel_result = airtel_api.paybill_to_customer(
+            paybill_id=context["airtel_paybill_id"],
+            customer_msisdn=context["airtel_customer_msisdn"],
+            amount=context["airtel_amount"],
+            currency=context["airtel_currency"],
+            country=context["airtel_country"],
+            narrative=context["airtel_narrative"],
+            metadata={
+                "mpesa_checkout_request_id": checkout_request_id,
+                "mpesa_result_desc": result_desc,
+                **(context.get("airtel_metadata") or {}),
+            },
+        )
+
+    return {
+        "ResultCode": 0,
+        "ResultDesc": "Callback received",
+        "mpesa_callback": callback,
+        "airtel_triggered": airtel_result is not None,
+        "airtel_response": airtel_result,
+        "stored_context_found": context is not None,
+    }

@@ -40,10 +40,7 @@ class AirtelAPI:
         *,
         currency: str = "KES",
         country: str = "KEN",
-        narrative: str = "Paybill to customer payout",
         transaction_reference: Optional[str] = None,
-        callback_url: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         if amount <= 0:
             raise ValueError("Amount for Paybill to customer transfer must be positive.")
@@ -68,8 +65,8 @@ class AirtelAPI:
         headers = headers = {
             'Content-Type': 'application/json',
             'Accept': '*/*',
-            'X-Country': 'KE',
-            'X-Currency': 'KES',
+            'X-Country': country,
+            'X-Currency': currency,
             'Authorization': f'Bearer {self.authenticate()}',
             'x-signature': 'MGsp*********Ag==',
             'x-key': 'DVZC*******************NM='

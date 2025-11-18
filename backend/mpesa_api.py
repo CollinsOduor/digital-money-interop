@@ -2,45 +2,58 @@
 M-Pesa API Simulation Module
 """
 
+import base64
 import time
 import uuid
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from backend.utils import normalize_msisdn
-from config import settings
 import requests
 
-import base64
+from config import settings
+from utils import normalize_msisdn
 
 
 class MpesaAPI:
-    def generate_security_credential(self):
-        return base64.b64encode(settings.MPESA_PASS_KEY.encode('utf-8')).decode('utf-8')
+    def __init__(self):
+        self.short_code = settings.MPESA_SHORT_CODE or "174379"
+        self.pass_key = settings.MPESA_PASS_KEY or "test_pass_key"
+        self.base_url = settings.MPESA_BASE_URL or "https://sandbox.safaricom.co.ke"
+        base_callback = settings.BASE_URL or "https://intermediary.com"
+        self.callback_url = f"{base_callback.rstrip('/')}/mpesa/stkpush/callback"
+
+    @staticmethod
+    def _generate_checkout_request_id() -> str:
+        return f"ws_CO_{uuid.uuid4().hex[:32]}"
+
+    @staticmethod
+    def _generate_merchant_request_id() -> str:
+        return f"MR{int(time.time())}{uuid.uuid4().hex[:6].upper()}"
+
+    def generate_security_credential(self) -> str:
+        return base64.b64encode(self.pass_key.encode("utf-8")).decode("utf-8")
 
     def generate_transaction_reference(self) -> str:
         return f"MPESA{int(time.time())}{uuid.uuid4().hex[:8].upper()}"
 
+    def generate_auth_creds(self) -> str:
+        creds = f"{settings.MPESA_CONSUMER_KEY}:{settings.MPESA_CONSUMER_SECRET}"
+        return base64.b64encode(creds.encode("utf-8")).decode("utf-8")
+
     def authenticate(self) -> Dict[str, Any]:
         response = requests.request(
             "GET",
-            f'{settings.MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials',
-            headers={
-                'Authorization': f'Basic {self.generate_auth_creds()}'
-            }
+            f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials",
+            headers={"Authorization": f"Basic {self.generate_auth_creds()}"},
         )
         response.raise_for_status()
         return response.json()
 
-    def generate_auth_creds(self):
-        creds = f"{settings.MPESA_CONSUMER_KEY}:{settings.MPESA_CONSUMER_SECRET}"
-        return base64.b64encode(creds.encode('utf-8')).decode('utf-8')
-
     def _generate_password(self, timestamp: Optional[str] = None) -> str:
         if not timestamp:
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        raw = f"{settings.MPESA_SHORT_CODE}{settings.MPESA_PASS_KEY}{timestamp}"
-        return base64.b64encode(raw.encode('utf-8')).decode('utf-8')
+        raw = f"{self.short_code}{self.pass_key}{timestamp}"
+        return base64.b64encode(raw.encode("utf-8")).decode("utf-8")
 
     def initiate_stk_push(
         self,
@@ -49,10 +62,10 @@ class MpesaAPI:
         amount: float,
         account_reference: str,
         description: str = "Interoperability STK Push",
-        transaction_reference: Optional[str] = None
+        transaction_reference: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Simulate M-Pesa STK push initiation request.
+        Initiate (or simulate) an M-Pesa STK push request.
         """
         if amount <= 0:
             raise ValueError("Amount must be greater than zero.")
@@ -60,35 +73,56 @@ class MpesaAPI:
         msisdn = normalize_msisdn(phone_number)
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         password = self._generate_password(timestamp)
-        bearer_token = self.authenticate()["access_token"]
-        
+        merchant_request_id = self._generate_merchant_request_id()
+        checkout_request_id = self._generate_checkout_request_id()
+        reference = transaction_reference or merchant_request_id
+
         payload = {
-            "BusinessShortCode": settings.MPESA_SHORT_CODE,
+            "BusinessShortCode": self.short_code,
             "Password": password,
             "Timestamp": timestamp,
             "TransactionType": "CustomerPayBillOnline",
             "Amount": int(round(amount)),
             "PartyA": msisdn,
-            "PartyB": settings.MPESA_SHORT_CODE,
+            "PartyB": self.short_code,
             "PhoneNumber": msisdn,
-            "CallBackURL": f"{settings.BASE_URL}/mpesa/stkpush/callback",
+            "CallBackURL": self.callback_url,
             "AccountReference": account_reference,
-            "TransactionDesc": description[:255]
+            "TransactionDesc": description[:255],
+            "ClientReference": reference,
         }
 
         headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {bearer_token}'
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.authenticate()['access_token']}",
         }
 
-        response = requests.request(
-            method="POST",
-            url=f'{settings.MPESA_BASE_URL}/mpesa/stkpush/v1/processrequest',
-            headers=headers,
-            json=payload
-        )
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = requests.request(
+                method="POST",
+                url=f"{self.base_url}/mpesa/stkpush/v1/processrequest",
+                headers=headers,
+                json=payload,
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException:
+            data = {
+                "MerchantRequestID": merchant_request_id,
+                "CheckoutRequestID": checkout_request_id,
+                "ResponseCode": "0",
+                "ResponseDescription": "Simulated STK push accepted",
+                "CustomerMessage": "Simulated STK Push request sent to handset",
+                "Request": payload,
+                "simulation": True,
+                "timestamp": datetime.now().isoformat(),
+            }
+        else:
+            data.setdefault("MerchantRequestID", merchant_request_id)
+            data.setdefault("CheckoutRequestID", checkout_request_id)
+            data["Request"] = payload
+            data["timestamp"] = datetime.now().isoformat()
 
         if data.get("ResponseCode") != "0":
             raise Exception("STK Push request was rejected")
@@ -102,7 +136,7 @@ class MpesaAPI:
         result_desc: str = "The service request is processed successfully.",
         amount: Optional[float] = None,
         mpesa_receipt_number: Optional[str] = None,
-        transaction_date: Optional[str] = None
+        transaction_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Simulate asynchronous STK callback payload from M-Pesa.
