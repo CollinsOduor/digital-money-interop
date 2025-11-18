@@ -11,8 +11,8 @@ const formatKsh = (amount: any) => {
 };
 
 const App = () => {
-    const [sourcePaybill, setSourcePaybill] = useState<any>('MPESA_1001');
-    const [destPaybill, setDestPaybill] = useState<any>('AIRTEL_2001');
+    const [sourcePaybill, setSourcePaybill] = useState<any>('MPESA_AGENT_1');
+    const [destPaybill, setDestPaybill] = useState<any>('AIRTEL_AGENT_1');
     const [amount, setAmount] = useState<any>(10000.00);
     const [status, setStatus] = useState<any>(null);
     const [isLoading, setIsLoading] = useState<any>(false);
@@ -60,6 +60,8 @@ const App = () => {
             if (response.ok) {
                 setStatus(data);
                 setLedgerSnapshot(data.current_ledger_snapshot);
+                // Refresh full ledger status
+                fetchStatus();
             } else {
                 setStatus({ 
                     success: false, 
@@ -82,14 +84,17 @@ const App = () => {
             <div className="space-y-4">
                 {Object.keys(ledgerSnapshot).map(key => {
                     const account = ledgerSnapshot[key];
-                    const isAgent = key === 'INTERMEDIARY_ACCOUNT';
+                    const isIntermediary = key.includes('INTERMEDIARY');
+                    const isAgent = key.includes('AGENT');
                     const color = account.network === 'MPESA' ? 'text-green-600' : 
                                   account.network === 'AIRTEL' ? 'text-red-600' : 'text-blue-600';
                     const networkTag = account.network === 'MPESA' ? 'M-PESA' : 
-                                       account.network === 'AIRTEL' ? 'AIRTEL' : 'AGENT';
+                                       account.network === 'AIRTEL' ? 'AIRTEL' : 'UNKNOWN';
+                    const borderColor = isIntermediary ? 'border-blue-500 bg-blue-50' : 
+                                       isAgent ? 'border-gray-300 bg-gray-50' : 'border-gray-200 bg-white';
 
                     return (
-                        <div key={key} className={`p-4 border-l-4 ${isAgent ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'} rounded-lg shadow-sm`}>
+                        <div key={key} className={`p-4 border-l-4 ${borderColor} rounded-lg shadow-sm`}>
                             <div className="flex justify-between items-center">
                                 <h4 className={`font-semibold text-sm ${color}`}>{account.name} ({networkTag})</h4>
                                 <span className="text-xs font-mono text-gray-400">{key}</span>
@@ -112,7 +117,7 @@ const App = () => {
                     Paybill Interoperability <span className="text-indigo-600">POC</span>
                 </h1>
                 <p className="mt-2 text-lg text-gray-500">
-                    Simulated M-Pesa Paybill to Airtel Money Paybill Transfer via Agent/Bank Settlement.
+                    Simulated M-Pesa and Airtel Money API transfers using proper API structures.
                 </p>
             </header>
 
@@ -130,28 +135,30 @@ const App = () => {
                     {/* Transfer Form */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div>
-                            <label htmlFor="source" className="block text-sm font-medium text-gray-700">Source M-Pesa Paybill</label>
+                            <label htmlFor="source" className="block text-sm font-medium text-gray-700">Source Paybill</label>
                             <input
                                 id="source"
                                 type="text"
                                 value={sourcePaybill}
                                 onChange={(e) => setSourcePaybill(e.target.value)}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
-                                placeholder="MPESA_1001"
+                                placeholder="MPESA_AGENT_1"
                                 disabled={isLoading}
                             />
+                            <p className="mt-1 text-xs text-gray-500">e.g., MPESA_AGENT_1, MPESA_AGENT_2, AIRTEL_AGENT_1, AIRTEL_AGENT_2</p>
                         </div>
                         <div>
-                            <label htmlFor="destination" className="block text-sm font-medium text-gray-700">Destination Airtel Paybill</label>
+                            <label htmlFor="destination" className="block text-sm font-medium text-gray-700">Destination Paybill</label>
                             <input
                                 id="destination"
                                 type="text"
                                 value={destPaybill}
                                 onChange={(e) => setDestPaybill(e.target.value)}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3 border"
-                                placeholder="AIRTEL_2001"
+                                placeholder="AIRTEL_AGENT_1"
                                 disabled={isLoading}
                             />
+                            <p className="mt-1 text-xs text-gray-500">e.g., MPESA_AGENT_1, MPESA_AGENT_2, AIRTEL_AGENT_1, AIRTEL_AGENT_2</p>
                         </div>
                         <div>
                             <label htmlFor="amount" className="block text-sm font-medium text-gray-700">Amount (Ksh)</label>
@@ -175,7 +182,7 @@ const App = () => {
                         className={`w-full py-3 px-6 border border-transparent rounded-lg text-lg font-medium text-white shadow-md transition duration-300 
                             ${isLoading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'}`}
                     >
-                        {isLoading ? 'Processing Simulation...' : 'Execute Cross-Network Transfer'}
+                        {isLoading ? 'Processing Transfer via APIs...' : 'Execute Transfer'}
                     </button>
 
                     {/* Transaction Results */}
@@ -200,9 +207,37 @@ const App = () => {
                                             </div>
                                         </div>
                                     ))}
+                                    {status.settlement_fee !== undefined && status.settlement_fee > 0 && (
+                                        <p className="text-sm text-gray-600 pt-2 border-t border-gray-200">
+                                            Settlement Fee: {formatKsh(status.settlement_fee)} (1% for cross-network transfers)
+                                        </p>
+                                    )}
                                     <p className="text-lg font-bold text-indigo-700 pt-3 border-t border-gray-200">
                                         Final Credit Amount: {formatKsh(status.final_amount_credited)}
                                     </p>
+                                    {status.transfer_type && (
+                                        <p className="text-sm text-gray-600 pt-2">
+                                            Transfer Type: <span className="font-semibold">{status.transfer_type}</span>
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                            {status.api_responses && status.api_responses.length > 0 && (
+                                <div className="mt-6 pt-6 border-t border-gray-200">
+                                    <h5 className="font-semibold text-gray-700 mb-3">API Responses:</h5>
+                                    <div className="space-y-3">
+                                        {status.api_responses.map((apiResp: any, index: number) => (
+                                            <div key={index} className="bg-gray-50 p-3 rounded border border-gray-200">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="text-xs font-semibold text-gray-700">{apiResp.step}</span>
+                                                    <span className="text-xs text-gray-500">{apiResp.network}</span>
+                                                </div>
+                                                <pre className="text-xs text-gray-600 overflow-x-auto">
+                                                    {JSON.stringify(apiResp.response, null, 2)}
+                                                </pre>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
